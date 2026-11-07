@@ -24,7 +24,31 @@ const CROPS = {
   corn:       { name: 'Corn',       emoji: '🌽', seedPrice: 25, sellPrice: 60, growSec: 45, xp: 22, color: '#ffd60a' },
   strawberry: { name: 'Strawberry', emoji: '🍓', seedPrice: 20, sellPrice: 45, growSec: 35, xp: 18, color: '#ff2d6f' },
 };
-const CROP_KEYS = Object.keys(CROPS);
+const CROP_KEYS = Object.keys(CROPS); // starter crops (hotbar slots 1-4)
+
+// Extra seeds sold by Nguyet. They use the same growing, planting and harvesting rules.
+const NEW_CROPS = {
+  potato:           { name: 'Potato',          emoji: '🥔', seedPrice: 12,   sellPrice: 26,   growSec: 25,  xp: 10, color: '#c9a56a', shape: 'bush' },
+  blueberry:        { name: 'Blueberry',       emoji: '🫐', seedPrice: 40,   sellPrice: 80,   growSec: 40,  xp: 15, color: '#3b5bdb', shape: 'bush' },
+  watermelon:       { name: 'Watermelon',      emoji: '🍉', seedPrice: 60,   sellPrice: 130,  growSec: 60,  xp: 15, color: '#2fa84f', shape: 'stalk' },
+  banana:           { name: 'Banana',          emoji: '🍌', seedPrice: 55,   sellPrice: 115,  growSec: 50,  xp: 15, color: '#ffe14d', shape: 'tree' },
+  orange:           { name: 'Orange',          emoji: '🍊', seedPrice: 50,   sellPrice: 105,  growSec: 45,  xp: 15, color: '#ff9a1f', shape: 'tree' },
+  grapes:           { name: 'Grapes',          emoji: '🍇', seedPrice: 65,   sellPrice: 140,  growSec: 55,  xp: 15, color: '#7b2cbf', shape: 'bush' },
+  mango:            { name: 'Mango',           emoji: '🥭', seedPrice: 120,  sellPrice: 260,  growSec: 70,  xp: 25, color: '#ffb703', shape: 'tree' },
+  pineapple:        { name: 'Pineapple',       emoji: '🍍', seedPrice: 150,  sellPrice: 330,  growSec: 80,  xp: 25, color: '#f4c430', shape: 'stalk' },
+  dragonfruit:      { name: 'Dragon Fruit',    emoji: '🐉', seedPrice: 180,  sellPrice: 400,  growSec: 85,  xp: 25, color: '#ff3e8a', shape: 'bush' },
+  cherry:           { name: 'Cherry',          emoji: '🍒', seedPrice: 110,  sellPrice: 240,  growSec: 60,  xp: 25, color: '#d00000', shape: 'tree' },
+  coconut:          { name: 'Coconut',         emoji: '🥥', seedPrice: 200,  sellPrice: 440,  growSec: 90,  xp: 25, color: '#8d6e63', shape: 'tree' },
+  goldenapple:      { name: 'Golden Apple',    emoji: '🍎', seedPrice: 350,  sellPrice: 800,  growSec: 120, xp: 40, color: '#ffd700', shape: 'tree' },
+  crystalberry:     { name: 'Crystal Berry',   emoji: '💎', seedPrice: 420,  sellPrice: 950,  growSec: 130, xp: 40, color: '#8ee9ff', shape: 'bush' },
+  rainbowmelon:     { name: 'Rainbow Melon',   emoji: '🌈', seedPrice: 500,  sellPrice: 1150, growSec: 140, xp: 40, color: '#ff6fd8', shape: 'stalk' },
+  moonflower:       { name: 'Moonflower',      emoji: '🌙', seedPrice: 380,  sellPrice: 870,  growSec: 125, xp: 40, color: '#e0d7ff', shape: 'bush' },
+  celestialfruit:   { name: 'Celestial Fruit', emoji: '✨', seedPrice: 900,  sellPrice: 2100, growSec: 200, xp: 70, color: '#ffe066', shape: 'tree' },
+  starfruit:        { name: 'Starfruit',       emoji: '⭐', seedPrice: 1000, sellPrice: 2400, growSec: 210, xp: 70, color: '#fff176', shape: 'stalk' },
+  goldendragonfruit:{ name: 'Golden Dragon Fruit', emoji: '👑', seedPrice: 1200, sellPrice: 2800, growSec: 230, xp: 70, color: '#ffc107', shape: 'bush' },
+};
+Object.assign(CROPS, NEW_CROPS);
+const ALL_CROP_KEYS = Object.keys(CROPS); // every crop in the game
 
 const SHOP = { x: 16, z: -4 };    // Seed shop (east side of the plaza)
 const SELL = { x: -16, z: -4 };   // Selling store (west side of the plaza)
@@ -36,8 +60,8 @@ const GARDEN = { x: 0, z: -30 };  // Personal garden (north, reached via the gar
 const state = {
   coins: START_COINS,
   xp: 0,
-  seeds: Object.fromEntries(CROP_KEYS.map(k => [k, 0])),
-  crops: Object.fromEntries(CROP_KEYS.map(k => [k, 0])),
+  seeds: Object.fromEntries(ALL_CROP_KEYS.map(k => [k, 0])),
+  crops: Object.fromEntries(ALL_CROP_KEYS.map(k => [k, 0])),
   plots: Array.from({ length: PLOT_COUNT }, () => ({ crop: null, plantedAt: 0 })),
   selectedSeed: 'carrot',
 };
@@ -69,19 +93,19 @@ function load() {
     const d = JSON.parse(raw);
     if (Number.isFinite(d.coins)) state.coins = Math.max(0, Math.floor(d.coins));
     if (Number.isFinite(d.xp)) state.xp = Math.max(0, Math.floor(d.xp));
-    for (const k of CROP_KEYS) {
+    for (const k of ALL_CROP_KEYS) {
       state.seeds[k] = Math.max(0, Math.floor(d.seeds?.[k] ?? 0));
       state.crops[k] = Math.max(0, Math.floor(d.crops?.[k] ?? 0));
     }
     if (Array.isArray(d.plots)) {
       for (let i = 0; i < PLOT_COUNT; i++) {
         const p = d.plots[i];
-        if (p && CROP_KEYS.includes(p.crop) && Number.isFinite(p.plantedAt)) {
+        if (p && ALL_CROP_KEYS.includes(p.crop) && Number.isFinite(p.plantedAt)) {
           state.plots[i] = { crop: p.crop, plantedAt: p.plantedAt };
         }
       }
     }
-    if (CROP_KEYS.includes(d.selectedSeed)) state.selectedSeed = d.selectedSeed;
+    if (ALL_CROP_KEYS.includes(d.selectedSeed)) state.selectedSeed = d.selectedSeed;
     return true;
   } catch (err) {
     console.warn('Load failed', err);
@@ -686,7 +710,134 @@ function buildSprout() {
   return g;
 }
 
+// Generic 3D model for the extra crops, built from each crop's color and shape
+function buildGenericFruit(def) {
+  const g = new THREE.Group();
+  const LEAF = '#3fbf4f';
+  if (def.shape === 'stalk') {
+    addMesh(new THREE.CylinderGeometry(0.07, 0.09, 1.1, 6), '#4cb84a', g, 0, 0.55, 0);
+    addMesh(new THREE.SphereGeometry(0.42, 14, 10), def.color, g, 0, 1.25, 0).scale.set(1, 0.8, 1);
+    addMesh(new THREE.ConeGeometry(0.14, 0.7, 5), LEAF, g, 0.35, 0.9, 0).rotation.z = -1.0;
+    addMesh(new THREE.ConeGeometry(0.14, 0.7, 5), LEAF, g, -0.35, 0.9, 0).rotation.z = 1.0;
+  } else if (def.shape === 'tree') {
+    addMesh(new THREE.CylinderGeometry(0.15, 0.22, 1.0, 6), '#8b5a2b', g, 0, 0.5, 0);
+    addMesh(new THREE.IcosahedronGeometry(0.6, 0), LEAF, g, 0, 1.45, 0);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      addMesh(new THREE.SphereGeometry(0.14, 10, 8), def.color, g, Math.cos(a) * 0.45, 1.2 + (i % 2) * 0.3, Math.sin(a) * 0.45);
+    }
+  } else {
+    addMesh(new THREE.IcosahedronGeometry(0.5, 0), LEAF, g, 0, 0.45, 0);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      addMesh(new THREE.SphereGeometry(0.13, 10, 8), def.color, g, Math.cos(a) * 0.4, 0.55 + (i % 2) * 0.2, Math.sin(a) * 0.4);
+    }
+  }
+  return g;
+}
+
+/* ---------------------------------------------------------
+   NPC SHOPKEEPERS · models and name labels
+   --------------------------------------------------------- */
+function buildAbdul(g) {
+  const SKIN = '#c68642', SHIRT = '#f5f5f0', VEST = '#2e8b57', PANTS = '#34495e';
+  const BEARD = '#2b2b2b', SHOE = '#2b2233';
+  addBox(0.36, 0.8, 0.36, PANTS, g, -0.22, 0.4, 0);
+  addBox(0.36, 0.8, 0.36, PANTS, g, 0.22, 0.4, 0);
+  addBox(0.44, 0.14, 0.5, SHOE, g, -0.22, 0.07, 0.05);
+  addBox(0.44, 0.14, 0.5, SHOE, g, 0.22, 0.07, 0.05);
+  addBox(0.95, 0.9, 0.5, SHIRT, g, 0, 1.25, 0);            // shirt
+  addBox(1.0, 0.7, 0.56, VEST, g, 0, 1.3, 0.02);           // green vest
+  addBox(0.3, 0.9, 0.3, SHIRT, g, -0.66, 1.25, 0);         // arms
+  addBox(0.3, 0.9, 0.3, SHIRT, g, 0.66, 1.25, 0);
+  addBox(0.3, 0.25, 0.3, SKIN, g, -0.66, 0.7, 0);
+  addBox(0.3, 0.25, 0.3, SKIN, g, 0.66, 0.7, 0);
+  addBox(0.8, 0.8, 0.8, SKIN, g, 0, 2.2, 0);               // head
+  addBox(0.62, 0.34, 0.12, BEARD, g, 0, 1.95, 0.42);       // beard
+  addBox(0.36, 0.06, 0.05, '#1a1a1a', g, 0, 2.02, 0.42);   // mustache
+  addBox(0.16, 0.14, 0.06, '#222222', g, -0.18, 2.27, 0.41); // eyes
+  addBox(0.16, 0.14, 0.06, '#222222', g, 0.18, 2.27, 0.41);
+  addBox(1.0, 0.42, 1.0, '#ffffff', g, 0, 2.7, 0);         // white turban
+  addBox(1.02, 0.12, 1.02, VEST, g, 0, 2.55, 0);           // green band
+}
+
+function buildNguyet(g) {
+  const SKIN = '#f6d1b1', DRESS = '#ff7eb6', DRESS2 = '#ffb3d6', HAIR = '#1e1a2e';
+  const BOW = '#ff3d7f', SHOE = '#4a2b3a';
+  addMesh(new THREE.CylinderGeometry(0.45, 0.7, 1.2, 12), DRESS, g, 0, 0.6, 0); // skirt
+  addBox(0.7, 0.55, 0.45, DRESS, g, 0, 1.35, 0);            // bodice
+  addBox(0.24, 0.6, 0.24, DRESS2, g, -0.5, 1.3, 0);         // sleeves
+  addBox(0.24, 0.6, 0.24, DRESS2, g, 0.5, 1.3, 0);
+  addBox(0.2, 0.2, 0.2, SKIN, g, -0.5, 0.95, 0);            // hands
+  addBox(0.2, 0.2, 0.2, SKIN, g, 0.5, 0.95, 0);
+  addBox(0.75, 0.75, 0.75, SKIN, g, 0, 2.2, 0);             // head
+  addBox(0.84, 0.3, 0.84, HAIR, g, 0, 2.6, 0);              // hair top
+  addBox(0.84, 1.0, 0.2, HAIR, g, 0, 2.05, -0.4);           // long hair
+  addBox(0.14, 0.8, 0.7, HAIR, g, -0.45, 2.0, 0);           // side hair
+  addBox(0.14, 0.8, 0.7, HAIR, g, 0.45, 2.0, 0);
+  addBox(0.13, 0.13, 0.05, '#222222', g, -0.17, 2.25, 0.39); // eyes
+  addBox(0.13, 0.13, 0.05, '#222222', g, 0.17, 2.25, 0.39);
+  addBox(0.14, 0.08, 0.04, '#ff8fab', g, -0.25, 2.1, 0.39);  // blush
+  addBox(0.14, 0.08, 0.04, '#ff8fab', g, 0.25, 2.1, 0.39);
+  addBox(0.2, 0.05, 0.04, '#c2456b', g, 0, 2.0, 0.39);       // smile
+  addBox(0.22, 0.14, 0.1, BOW, g, 0.3, 2.72, 0.2);           // bow
+  addBox(0.2, 0.12, 0.25, SHOE, g, -0.15, 0.06, 0.1);
+  addBox(0.2, 0.12, 0.25, SHOE, g, 0.15, 0.06, 0.1);
+}
+
+function makeNameTexture(text, color) {
+  const c = document.createElement('canvas');
+  c.width = 384;
+  c.height = 96;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.fillRect(6, 14, 372, 68);
+  g.fillStyle = color;
+  g.font = 'bold 44px Trebuchet MS, Arial, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, 192, 50);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function addNameLabel(parent, text, color, y) {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeNameTexture(text, color), transparent: true, depthTest: false,
+  }));
+  sprite.scale.set(2.2, 0.55, 1);
+  sprite.position.set(0, y, 0);
+  sprite.renderOrder = 10;
+  parent.add(sprite);
+}
+
+// side: +1 = Crop Store (faces +x), -1 = Seed Shop (faces -x)
+function buildShopkeeper(kind, side) {
+  const sx = kind === 'abdul' ? SELL.x : SHOP.x;
+  const sz = kind === 'abdul' ? SELL.z : SHOP.z;
+  const counterX = sx + side * 5.2;
+  addBox(0.9, 1.0, 3.2, '#a0673a', scene, counterX, 0.5, sz);     // counter
+  addBox(1.0, 0.08, 3.4, '#fff8e7', scene, counterX, 1.04, sz);   // counter top
+  [[-0.9, '#ff8c1a'], [0, '#ff3b30'], [0.9, '#ffd60a']].forEach(([dz, col]) =>
+    addMesh(new THREE.SphereGeometry(0.14, 8, 6), col, scene, counterX, 1.2, sz + dz));
+  addRectObs(counterX, sz, 0.9, 3.2);                              // counter blocks walking
+
+  const npc = new THREE.Group();
+  npc.position.set(sx + side * 4.2, 0, sz);   // behind the counter
+  npc.rotation.y = side * Math.PI / 2;        // face the customers
+  scene.add(npc);
+  if (kind === 'abdul') buildAbdul(npc); else buildNguyet(npc);
+  addNameLabel(npc, NPC_INFO[kind].name, kind === 'abdul' ? '#1d6b3a' : '#c2456b', 3.3);
+}
+
+function buildNpcs() {
+  buildShopkeeper('abdul', 1);
+  buildShopkeeper('nguyet', -1);
+}
+
 function buildCrop(key) {
+  if (CROPS[key].shape) return buildGenericFruit(CROPS[key]);
   const g = new THREE.Group();
   if (key === 'carrot') {
     addMesh(new THREE.ConeGeometry(0.22, 0.9, 8), CROPS.carrot.color, g, 0, 0.4, 0).rotation.x = Math.PI;
@@ -902,16 +1053,17 @@ function plotLabel(i) {
 }
 
 function buySeeds(key, qty) {
+  if (!Number.isInteger(qty) || qty < 1) return;
   const c = CROPS[key];
   const cost = c.seedPrice * qty;
   if (state.coins < cost) {
-    notify(`Not enough coins. You need 🪙${cost} but have 🪙${state.coins}.`, 'error');
+    notify('Not enough coins! Sell some crops to earn more money.', 'error');
     return;
   }
   state.coins -= cost;
   playCoin();
   state.seeds[key] += qty;
-  notify(`Bought ${qty} ${c.name} seed${qty > 1 ? 's' : ''} for 🪙${cost}.`, 'success');
+  notify(`Successfully purchased ${qty} ${c.name} Seed${qty > 1 ? 's' : ''}!`, 'success');
   save();
   refreshUI();
 }
@@ -951,14 +1103,14 @@ function buildTargets() {
     run: () => plotAction(i),
   }));
   targets.push({
-    x: SHOP.x, z: SHOP.z, range: 6,
-    label: () => 'Visit the Seed Shop',
-    run: () => openModal('shop'),
+    x: SHOP.x, z: SHOP.z, range: 8,
+    label: () => 'Talk to Nguyet · Seed Shop',
+    run: () => talkTo('nguyet'),
   });
   targets.push({
-    x: SELL.x, z: SELL.z, range: 6,
-    label: () => 'Visit the Selling Store',
-    run: () => openModal('sell'),
+    x: SELL.x, z: SELL.z, range: 8,
+    label: () => 'Talk to Abdul · Crop Store',
+    run: () => talkTo('abdul'),
   });
 }
 
@@ -1020,7 +1172,7 @@ function updateHUD() {
 // Bottom bag: every seed and harvested crop you own (tap a chip to select it)
 function renderBag() {
   const bag = document.getElementById('bag-strip');
-  bag.innerHTML = CROP_KEYS.map(k => {
+  bag.innerHTML = bagKeys().map(k => {
     const c = CROPS[k];
     return `
       <div class="bag-chip ${k === state.selectedSeed ? 'active' : ''}" data-key="${k}">
@@ -1061,6 +1213,7 @@ function notify(message, type = 'info') {
 function refreshUI() {
   updateHUD();
   renderModal();
+  renderNpcPanel();
 }
 
 /* ---------------------------------------------------------
@@ -1076,6 +1229,7 @@ function openModal(mode) {
 function closeModal() {
   modalMode = null;
   dom.modal.classList.add('hidden');
+  document.getElementById('npc-overlay').classList.add('hidden');
 }
 
 function shopHTML() {
@@ -1120,9 +1274,9 @@ function sellHTML() {
 }
 
 function inventoryHTML() {
-  const crops = CROP_KEYS.map(k =>
+  const crops = ALL_CROP_KEYS.map(k =>
     `<div class="inv-row"><span>${CROPS[k].emoji} ${CROPS[k].name}</span><b>${state.crops[k]}</b></div>`).join('');
-  const seeds = CROP_KEYS.map(k =>
+  const seeds = ALL_CROP_KEYS.map(k =>
     `<div class="inv-row"><span>${CROPS[k].emoji} ${CROPS[k].name} seeds</span><b>${state.seeds[k]}</b></div>`).join('');
   const planted = state.plots.filter(p => p.crop).length;
   return `
@@ -1138,7 +1292,7 @@ function inventoryHTML() {
 }
 
 function renderModal() {
-  if (!modalMode) return;
+  if (!modalMode || modalMode.includes('-')) return; // '-' modes are NPC panels
   if (modalMode === 'shop') {
     dom.modalTitle.textContent = '🌱 Seed Shop';
     dom.modalBody.innerHTML = shopHTML();
@@ -1165,7 +1319,7 @@ dom.modalBody.addEventListener('click', e => {
 dom.modalClose.addEventListener('click', closeModal);
 dom.modal.addEventListener('click', e => { if (e.target === dom.modal) closeModal(); });
 dom.invBtn.addEventListener('click', () => openModal('inventory'));
-dom.shopBtn.addEventListener('click', () => openModal('shop'));
+dom.shopBtn.addEventListener('click', () => { if (!modalMode) openSeedShop(); });
 
 /* ---------------------------------------------------------
    PLOT VISUALS (reflect state; state itself lives above)
@@ -1311,7 +1465,8 @@ buildNature();
 buildClouds();
 avatar = buildAvatar();
 sproutProto = buildSprout();
-for (const k of CROP_KEYS) cropProto[k] = buildCrop(k);
+for (const k of ALL_CROP_KEYS) cropProto[k] = buildCrop(k);
+buildNpcs();
 buildTargets();
 updateHUD();
 
