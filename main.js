@@ -120,6 +120,161 @@ function rng(seed) {
 const rnd = rng(20240607);
 
 /* ---------------------------------------------------------
+   AUDIO · background music, footsteps, growth sounds
+   Synthesized with Web Audio, so no extra files are needed.
+   --------------------------------------------------------- */
+const audio = {
+  ctx: null, master: null, musicBus: null, sfxBus: null,
+  started: false,
+  muted: localStorage.getItem('garden3d_muted') === '1',
+  nextNoteTime: 0, step: 0, noise: null,
+};
+let footTimer = 0;
+let sparkleTimer = 2;
+
+const MUSIC_BPM = 108;
+const EIGHTH = 60 / MUSIC_BPM / 2;
+// 32-step loop of eighth notes (MIDI numbers, 0 = rest)
+const MELODY = [72, 0, 76, 79,  77, 76, 0, 72,  74, 0, 79, 81,  79, 77, 76, 0,
+                76, 0, 79, 81,  84, 0, 81, 79,  77, 76, 74, 0,  72, 0, 74, 76];
+// One bass note every 4 steps
+const BASS = [48, 48, 43, 43, 45, 45, 41, 41];
+
+const midiToFreq = m => 440 * Math.pow(2, (m - 69) / 12);
+const audioReady = () => !!audio.ctx && audio.ctx.state === 'running';
+
+function ensureAudio() {
+  if (audio.ctx) return true;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return false;
+  audio.ctx = new AC();
+  audio.master = audio.ctx.createGain();
+  audio.master.gain.value = audio.muted ? 0 : 1;
+  audio.master.connect(audio.ctx.destination);
+  audio.musicBus = audio.ctx.createGain();
+  audio.musicBus.gain.value = 0.2;
+  audio.musicBus.connect(audio.master);
+  audio.sfxBus = audio.ctx.createGain();
+  audio.sfxBus.gain.value = 0.7;
+  audio.sfxBus.connect(audio.master);
+  return true;
+}
+
+// Browsers only allow audio after a user gesture, so start on the first tap or key press
+function unlockAudio() {
+  if (!ensureAudio()) return;
+  if (audio.ctx.state === 'suspended') audio.ctx.resume();
+  if (!audio.started) {
+    audio.started = true;
+    audio.nextNoteTime = audio.ctx.currentTime + 0.15;
+    setInterval(scheduleMusic, 110);
+  }
+}
+
+function tone(freq, when, dur, type, vol, bus) {
+  const ctx = audio.ctx;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, when);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(vol, when + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+  o.connect(g);
+  g.connect(bus);
+  o.start(when);
+  o.stop(when + dur + 0.05);
+}
+
+function scheduleMusic() {
+  if (!audio.ctx) return;
+  while (audio.nextNoteTime < audio.ctx.currentTime + 0.4) {
+    const s = audio.step % 32;
+    const t = audio.nextNoteTime;
+    if (MELODY[s]) tone(midiToFreq(MELODY[s]), t, EIGHTH * 0.95, 'triangle', 0.16, audio.musicBus);
+    if (s % 4 === 0) tone(midiToFreq(BASS[(s / 4) % 8]), t, EIGHTH * 3.8, 'sine', 0.3, audio.musicBus);
+    audio.nextNoteTime += EIGHTH;
+    audio.step++;
+  }
+}
+
+function playFootstep() {
+  if (!audioReady()) return;
+  const ctx = audio.ctx;
+  if (!audio.noise) {
+    const len = Math.floor(ctx.sampleRate * 0.12);
+    audio.noise = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = audio.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = audio.noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 700 + Math.random() * 400;
+  const g = ctx.createGain();
+  g.gain.value = 0.35;
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(audio.sfxBus);
+  src.start();
+}
+
+function playBlip(freqs, type, gap, vol) {
+  if (!audioReady()) return;
+  const t0 = audio.ctx.currentTime;
+  freqs.forEach((f, i) => tone(f, t0 + i * gap, 0.2, type, vol, audio.sfxBus));
+}
+const playPlant = () => playBlip([392, 523, 659], 'sine', 0.06, 0.22);
+const playGrow = stage => (stage === 2
+  ? playBlip([659, 784, 988, 1318], 'triangle', 0.08, 0.2)
+  : playBlip([523, 659], 'sine', 0.09, 0.18));
+const playHarvest = () => playBlip([784, 988, 1175, 1568], 'triangle', 0.07, 0.22);
+const playCoin = () => playBlip([1318, 1760], 'square', 0.06, 0.07);
+
+function playJump() {
+  if (!audioReady()) return;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(260, t);
+  o.frequency.exponentialRampToValueAtTime(620, t + 0.18);
+  g.gain.setValueAtTime(0.18, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  o.connect(g);
+  g.connect(audio.sfxBus);
+  o.start(t);
+  o.stop(t + 0.22);
+}
+
+// Soft sparkle now and then while any crop is still growing
+function updateAmbientSound(dt) {
+  if (!audioReady() || modalMode) return;
+  const growing = state.plots.some(p => p.crop && plotProgress(p) < 1);
+  if (!growing) return;
+  sparkleTimer -= dt;
+  if (sparkleTimer <= 0) {
+    tone(1568 + rnd() * 600, audio.ctx.currentTime, 0.3, 'sine', 0.04, audio.sfxBus);
+    sparkleTimer = 3 + rnd() * 2.5;
+  }
+}
+
+const soundBtn = document.getElementById('btn-sound');
+function refreshSoundButton() { soundBtn.textContent = audio.muted ? '🔇' : '🔊'; }
+soundBtn.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  unlockAudio();
+  audio.muted = !audio.muted;
+  localStorage.setItem('garden3d_muted', audio.muted ? '1' : '0');
+  if (audio.master) audio.master.gain.value = audio.muted ? 0 : 1;
+  refreshSoundButton();
+});
+refreshSoundButton();
+addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+
+/* ---------------------------------------------------------
    DOM REFERENCES
    --------------------------------------------------------- */
 const $ = id => document.getElementById(id);
@@ -707,6 +862,7 @@ function plantSeed(i) {
   state.seeds[key] -= 1;
   state.plots[i] = { crop: key, plantedAt: Date.now() };
   notify(`Planted ${c.name} in plot ${i + 1}. Ready in ${c.growSec}s.`, 'success');
+  playPlant();
   save();
   refreshUI();
 }
@@ -721,6 +877,7 @@ function harvestPlot(i) {
   state.crops[key] += 1;
   gainXp(c.xp);
   notify(`Harvested a ${c.name}! Added to your inventory.`, 'success');
+  playHarvest();
   save();
   refreshUI();
 }
@@ -752,6 +909,7 @@ function buySeeds(key, qty) {
     return;
   }
   state.coins -= cost;
+  playCoin();
   state.seeds[key] += qty;
   notify(`Bought ${qty} ${c.name} seed${qty > 1 ? 's' : ''} for 🪙${cost}.`, 'success');
   save();
@@ -768,6 +926,7 @@ function sellCrops(key, qty) {
   const gain = n * c.sellPrice;
   state.crops[key] -= n;
   state.coins += gain;
+  playCoin();
   notify(`Sold ${n} ${c.name}${n > 1 ? 's' : ''} for +🪙${gain}!`, 'success');
   save();
   refreshUI();
@@ -849,6 +1008,7 @@ function updateHUD() {
   const sel = CROPS[state.selectedSeed];
   dom.selected.textContent = `Selected: ${sel.emoji} ${sel.name} · ${state.seeds[state.selectedSeed]} left`;
 
+  renderBag();
   dom.hotbar.querySelectorAll('.seed-slot').forEach(btn => {
     const k = btn.dataset.key;
     btn.classList.toggle('active', k === state.selectedSeed);
@@ -856,6 +1016,25 @@ function updateHUD() {
     btn.querySelector('.slot-count').textContent = `x${state.seeds[k]}`;
   });
 }
+
+// Bottom bag: every seed and harvested crop you own (tap a chip to select it)
+function renderBag() {
+  const bag = document.getElementById('bag-strip');
+  bag.innerHTML = CROP_KEYS.map(k => {
+    const c = CROPS[k];
+    return `
+      <div class="bag-chip ${k === state.selectedSeed ? 'active' : ''}" data-key="${k}">
+        <span class="bag-seed">🌱 ${state.seeds[k]}</span>
+        <span class="bag-crop">${c.emoji} ${state.crops[k]}</span>
+      </div>`;
+  }).join('');
+}
+document.getElementById('bag-strip').addEventListener('pointerdown', e => {
+  const chip = e.target.closest('.bag-chip');
+  if (!chip) return;
+  e.preventDefault();
+  selectSeed(chip.dataset.key);
+});
 
 let lastPrompt = '';
 function updatePrompt() {
@@ -999,6 +1178,7 @@ function updatePlotVisual(view, data, now, t) {
     visKey = `${data.crop}|${stage}`;
   }
 
+  const prevKey = view.visKey;
   if (visKey !== view.visKey) {
     if (view.cropObj) view.group.remove(view.cropObj);
     view.cropObj = null;
@@ -1008,6 +1188,8 @@ function updatePlotVisual(view, data, now, t) {
       view.cropObj.scale.setScalar(stage === 1 ? 0.5 : 1);
       view.group.add(view.cropObj);
     }
+    // Growth sound when the same crop moves to its next stage
+    if (data.crop && prevKey.startsWith(data.crop + '|')) playGrow(stage);
     view.visKey = visKey;
   }
 
@@ -1054,6 +1236,7 @@ function updatePlayer(dt) {
   // Jump & gravity
   if (jumpQueued && player.grounded) {
     player.vy = JUMP_SPEED;
+    playJump();
     player.grounded = false;
   }
   jumpQueued = false;
@@ -1070,6 +1253,13 @@ function updatePlayer(dt) {
   player.z = clamp(player.z, -WORLD_LIMIT, WORLD_LIMIT);
 
   // Animation
+  // Footsteps while walking on the ground
+  if (moving && player.grounded) {
+    footTimer -= dt;
+    if (footTimer <= 0) { playFootstep(); footTimer = 0.34; }
+  } else {
+    footTimer = 0;
+  }
   if (moving && player.grounded) player.walk += dt * 9 * Math.min(1, mag);
   const swing = moving && player.grounded ? Math.sin(player.walk) * 0.7 : 0;
   const idleSway = Math.sin(performance.now() * 0.002) * 0.04;
@@ -1153,6 +1343,7 @@ function frame() {
   plotViews.forEach((v, i) => updatePlotVisual(v, state.plots[i], now, elapsed));
   updateClouds(dt);
   updatePrompt();
+  updateAmbientSound(dt);
 
   renderer.render(scene, camera);
 
