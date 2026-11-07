@@ -1188,6 +1188,236 @@ document.getElementById('bag-strip').addEventListener('pointerdown', e => {
   selectSeed(chip.dataset.key);
 });
 
+/* ---------------------------------------------------------
+   NPC SHOP SYSTEM · Abdul (sells crops) and Nguyet (sells seeds)
+   Uses the existing coins, inventory, planting and save code.
+   --------------------------------------------------------- */
+const NPC_INFO = {
+  abdul:  { name: 'Abdul',  role: 'Crop Buyer',  avatar: '🧔', line: 'Hello! Welcome to my store. You wanna sell your crops?' },
+  nguyet: { name: 'Nguyet', role: 'Seed Seller', avatar: '👩', line: 'Hi! Welcome to my seed shop. You wanna buy some seeds?' },
+};
+const SHOP_RARITY = {
+  carrot: 'COMMON', tomato: 'COMMON', potato: 'COMMON', corn: 'COMMON', strawberry: 'COMMON',
+  blueberry: 'UNCOMMON', watermelon: 'UNCOMMON', banana: 'UNCOMMON', orange: 'UNCOMMON', grapes: 'UNCOMMON',
+  mango: 'RARE', pineapple: 'RARE', dragonfruit: 'RARE', cherry: 'RARE', coconut: 'RARE',
+  goldenapple: 'EPIC', crystalberry: 'EPIC', rainbowmelon: 'EPIC', moonflower: 'EPIC',
+  celestialfruit: 'LEGENDARY', starfruit: 'LEGENDARY', goldendragonfruit: 'LEGENDARY',
+};
+const RARITY_ORDER = ['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY'];
+const RARITY_COLOR = { COMMON: '#8e9aaf', UNCOMMON: '#3ccf5e', RARE: '#3aa8ff', EPIC: '#b05cff', LEGENDARY: '#ffb300' };
+
+const npcUI = { filter: 'ALL', buyQty: {}, sellQty: {} };
+let txLock = false;
+
+// Stops a double click from running the same transaction twice
+function withTx(fn) {
+  if (txLock) return;
+  txLock = true;
+  try { fn(); } finally { txLock = false; }
+}
+
+function plural(name, n) {
+  if (n === 1) return name;
+  if (name.endsWith('y')) return name.slice(0, -1) + 'ies';
+  if (name.endsWith('o')) return name + 'es';
+  return name + 's';
+}
+
+// Bag shows the 4 starter crops plus anything else the player owns
+function bagKeys() {
+  return ALL_CROP_KEYS.filter(k => CROP_KEYS.includes(k) || state.seeds[k] > 0 || state.crops[k] > 0);
+}
+
+function showNpcOverlay() {
+  document.getElementById('npc-overlay').classList.remove('hidden');
+}
+
+function talkTo(who) {
+  if (modalMode) return;
+  modalMode = `${who}-ask`;
+  showNpcOverlay();
+  renderNpcPanel();
+}
+
+function openSeedShop() {
+  npcUI.buyQty = {};
+  npcUI.filter = 'ALL';
+  modalMode = 'nguyet-buy';
+  showNpcOverlay();
+  renderNpcPanel();
+}
+
+function sellBatch(batch) {
+  let total = 0;
+  for (const [k, n] of batch) {
+    const gain = n * CROPS[k].sellPrice;
+    state.crops[k] -= n;
+    state.coins += gain;
+    total += gain;
+    notify(`You sold ${n} ${plural(CROPS[k].name, n)}!`, 'success');
+  }
+  notify(`+${total} Coins`, 'success');
+  playCoin();
+  save();
+  refreshUI();
+}
+
+function sellSelected() {
+  const batch = ALL_CROP_KEYS
+    .map(k => [k, Math.min(npcUI.sellQty[k] || 0, state.crops[k])])
+    .filter(([, n]) => n > 0);
+  if (!batch.length) { notify('Choose how many crops to sell first.', 'info'); return; }
+  npcUI.sellQty = {};
+  sellBatch(batch);
+}
+
+function sellAll() {
+  const batch = ALL_CROP_KEYS.filter(k => state.crops[k] > 0).map(k => [k, state.crops[k]]);
+  if (!batch.length) { notify("You don't have any crops to sell yet!", 'error'); return; }
+  npcUI.sellQty = {};
+  sellBatch(batch);
+}
+
+function dialogHTML(who) {
+  const n = NPC_INFO[who];
+  return `
+    <div class="npc-head">
+      <span class="npc-avatar">${n.avatar}</span>
+      <div><b>${n.name}</b><small>${n.role}</small></div>
+      <button class="npc-x" data-act="close" aria-label="Close">✕</button>
+    </div>
+    <div class="speech">“${n.line}”</div>
+    <div class="npc-buttons">
+      <button class="btn-yes" data-act="yes">YES</button>
+      <button class="btn-no" data-act="no">NO</button>
+    </div>`;
+}
+
+function sellPanelHTML() {
+  const n = NPC_INFO.abdul;
+  const owned = ALL_CROP_KEYS.filter(k => state.crops[k] > 0);
+  let selVal = 0, totVal = 0;
+  let rows;
+  if (!owned.length) {
+    rows = `<p class="npc-empty">You don't have any crops to sell yet!</p>`;
+  } else {
+    rows = owned.map(k => {
+      const c = CROPS[k];
+      const have = state.crops[k];
+      const sel = Math.min(npcUI.sellQty[k] || 0, have);
+      selVal += sel * c.sellPrice;
+      totVal += have * c.sellPrice;
+      return `
+        <div class="shop-row" style="--rc:${c.color}">
+          <span class="row-emoji">${c.emoji}</span>
+          <div class="row-info"><b>${c.name}</b><small>🪙${c.sellPrice} each · you have ${have}</small></div>
+          <div class="stepper">
+            <button data-act="sell-dec" data-key="${k}">−</button>
+            <span>${sel}</span>
+            <button data-act="sell-inc" data-key="${k}">+</button>
+          </div>
+          <div class="row-total">🪙${sel * c.sellPrice}</div>
+        </div>`;
+    }).join('');
+  }
+  return `
+    <div class="npc-head">
+      <span class="npc-avatar">${n.avatar}</span>
+      <div><b>Abdul's Crop Store</b><small>Your coins: <span class="balance">🪙 ${state.coins}</span></small></div>
+      <button class="npc-x" data-act="close" aria-label="Close">✕</button>
+    </div>
+    <div class="shop-list">${rows}</div>
+    ${owned.length ? `
+      <div class="npc-total"><span>Selected value</span><span>🪙 ${selVal}</span></div>
+      <div class="npc-total"><span>Total crop value</span><span>🪙 ${totVal}</span></div>` : ''}
+    <div class="npc-footer">
+      <button class="btn-sell-sel" data-act="sell-selected" ${selVal ? '' : 'disabled'}>SELL SELECTED</button>
+      <button class="btn-sell-all" data-act="sell-all" ${owned.length ? '' : 'disabled'}>SELL ALL</button>
+      <button class="btn-close" data-act="close">CLOSE</button>
+    </div>`;
+}
+
+function seedPanelHTML() {
+  const filters = ['ALL', ...RARITY_ORDER].map(r => {
+    const col = r === 'ALL' ? '#7b4fd6' : RARITY_COLOR[r];
+    return `<button class="filter ${npcUI.filter === r ? 'active' : ''}" style="--rc:${col}" data-act="filter" data-key="${r}">${r}</button>`;
+  }).join('');
+  const keys = ALL_CROP_KEYS.filter(k => npcUI.filter === 'ALL' || SHOP_RARITY[k] === npcUI.filter);
+  const cards = keys.map(k => {
+    const c = CROPS[k];
+    const r = SHOP_RARITY[k];
+    const qty = npcUI.buyQty[k] || 1;
+    const cost = qty * c.seedPrice;
+    return `
+      <div class="shop-card" style="--rc:${RARITY_COLOR[r]}">
+        <div class="icon">${c.emoji}</div>
+        <b>${c.name} Seed</b>
+        <span class="rarity">${r}</span>
+        <small>🪙 ${c.seedPrice} each · grows in ${c.growSec}s</small>
+        <small>You own: ${state.seeds[k]}</small>
+        <div class="stepper">
+          <button data-act="buy-dec" data-key="${k}">−</button>
+          <span>${qty}</span>
+          <button data-act="buy-inc" data-key="${k}">+</button>
+        </div>
+        <button class="buy-btn" data-act="buy" data-key="${k}">BUY · 🪙${cost}</button>
+      </div>`;
+  }).join('');
+  return `
+    <div class="npc-head">
+      <span class="npc-avatar">${NPC_INFO.nguyet.avatar}</span>
+      <div><b>Nguyet's Seed Shop</b><small>Your coins: <span class="balance">🪙 ${state.coins}</span></small></div>
+      <button class="npc-x" data-act="close" aria-label="Close">✕</button>
+    </div>
+    <div class="filters">${filters}</div>
+    <div class="seed-grid">${cards}</div>`;
+}
+
+function renderNpcPanel() {
+  const card = document.getElementById('npc-card');
+  if (!card || !modalMode || !modalMode.includes('-')) return;
+  card.classList.toggle('dialog', modalMode.endsWith('-ask'));
+  if (modalMode === 'abdul-ask') card.innerHTML = dialogHTML('abdul');
+  else if (modalMode === 'nguyet-ask') card.innerHTML = dialogHTML('nguyet');
+  else if (modalMode === 'abdul-sell') card.innerHTML = sellPanelHTML();
+  else if (modalMode === 'nguyet-buy') card.innerHTML = seedPanelHTML();
+}
+
+document.getElementById('npc-overlay').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b || b.disabled) return;
+  const act = b.dataset.act;
+  const key = b.dataset.key;
+
+  if (act === 'yes') {
+    if (modalMode === 'abdul-ask') { npcUI.sellQty = {}; modalMode = 'abdul-sell'; renderNpcPanel(); }
+    else if (modalMode === 'nguyet-ask') openSeedShop();
+  } else if (act === 'no' || act === 'close') {
+    closeModal();
+  } else if (act === 'sell-inc') {
+    npcUI.sellQty[key] = Math.min(state.crops[key], (npcUI.sellQty[key] || 0) + 1);
+    renderNpcPanel();
+  } else if (act === 'sell-dec') {
+    npcUI.sellQty[key] = Math.max(0, (npcUI.sellQty[key] || 0) - 1);
+    renderNpcPanel();
+  } else if (act === 'sell-selected') {
+    withTx(sellSelected);
+  } else if (act === 'sell-all') {
+    withTx(sellAll);
+  } else if (act === 'filter') {
+    npcUI.filter = key;
+    renderNpcPanel();
+  } else if (act === 'buy-inc') {
+    npcUI.buyQty[key] = Math.min(99, (npcUI.buyQty[key] || 1) + 1);
+    renderNpcPanel();
+  } else if (act === 'buy-dec') {
+    npcUI.buyQty[key] = Math.max(1, (npcUI.buyQty[key] || 1) - 1);
+    renderNpcPanel();
+  } else if (act === 'buy') {
+    withTx(() => buySeeds(key, npcUI.buyQty[key] || 1));
+  }
+});
+
 let lastPrompt = '';
 function updatePrompt() {
   const t = nearestTarget();
