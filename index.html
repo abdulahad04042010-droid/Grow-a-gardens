@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Sunny Meadow Farm · 3D Garden World</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="game-root">
+    <canvas id="game-canvas"></canvas>
+
+    <div id="loading">🌱 Planting the meadow…</div>
+
+    <!-- Top HUD -->
+    <header id="hud-top">
+      <div class="panel stats">
+        <div class="stat coins"><span>🪙</span><span id="coins">100</span></div>
+        <div class="stat level">
+          <span>Level <b id="level">1</b></span>
+        </div>
+        <div class="xp-bar"><div id="xp-fill"></div></div>
+      </div>
+      <div class="top-buttons">
+        <button id="btn-inventory" class="pill-btn">🎒 Inventory</button>
+        <button id="btn-shop" class="pill-btn accent">🛒 Shop</button>
+      </div>
+    </header>
+
+    <!-- Prompt & hotbar -->
+    <div id="prompt" class="panel hidden"></div>
+    <div id="hotbar-wrap">
+      <div id="selected-label" class="panel">Selected: —</div>
+      <div id="hotbar"></div>
+    </div>
+
+    <!-- Touch / mouse actions -->
+    <button id="interact-btn" aria-label="Interact">Use</button>
+    <button id="jump-btn" aria-label="Jump">⤴</button>
+
+    <div id="joystick" class="joystick" aria-label="Movement joystick">
+      <div id="joystick-knob"></div>
+    </div>
+
+    <div id="controls-hint" class="panel small">
+      WASD move · Space jump · Drag to rotate · Scroll zoom · E interact · 1–4 pick seeds
+    </div>
+
+    <div id="toasts"></div>
+
+    <!-- Modal (shop / sell / inventory) -->
+    <div id="modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="modal-title"></h2>
+          <button id="modal-close" aria-label="Close">✕</button>
+        </div>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
