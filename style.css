@@ -283,6 +283,33 @@ button { font-family: inherit; cursor: pointer; border: none; }
   #prompt { bottom: 300px; }
 }
 
+/* ---------- Bag strip (seeds & harvested crops) ---------- */
+#bag-strip {
+  display: flex;
+  gap: 6px;
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 5px 8px;
+  box-shadow: var(--shadow);
+  border: 3px solid #ffffff;
+}
+.bag-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 62px;
+  padding: 4px 6px;
+  border-radius: 12px;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--ink);
+  cursor: pointer;
+}
+.bag-chip.active { background: #fff3b0; outline: 3px solid #ffb347; }
+.bag-seed { color: #2f8f4a; }
+.bag-crop { color: #c25e00; }
+
 /* ---------- Toasts ---------- */
 #toasts {
   position: absolute;
