@@ -17,6 +17,8 @@ const GRAVITY = 26;
 const PLAYER_RADIUS = 0.45;
 const INTERACT_RANGE = 3.6;
 const WORLD_LIMIT = 105;
+const PLAYER_HEIGHT = 2.7;
+const MATURE_H = PLAYER_HEIGHT * 2; // mature crops are twice the player's height
 
 const CROPS = {
   carrot:     { name: 'Carrot',     emoji: '🥕', seedPrice: 10, sellPrice: 22, growSec: 20, xp: 10, color: '#ff8c1a' },
@@ -64,6 +66,8 @@ const state = {
   crops: Object.fromEntries(ALL_CROP_KEYS.map(k => [k, 0])),
   plots: Array.from({ length: PLOT_COUNT }, () => ({ crop: null, plantedAt: 0 })),
   selectedSeed: 'carrot',
+  gameTime: 0,      // seconds of in-game time (one day = DAY_LENGTH)
+  lastResetDay: 0,  // last in-game day whose morning coin reset has been applied
 };
 
 /* ---------------------------------------------------------
@@ -80,6 +84,8 @@ function save() {
       crops: state.crops,
       plots: state.plots,
       selectedSeed: state.selectedSeed,
+      gameTime: state.gameTime,
+      lastResetDay: state.lastResetDay,
     }));
   } catch (err) {
     console.warn('Save failed', err);
@@ -106,6 +112,8 @@ function load() {
       }
     }
     if (ALL_CROP_KEYS.includes(d.selectedSeed)) state.selectedSeed = d.selectedSeed;
+    if (Number.isFinite(d.gameTime)) state.gameTime = Math.max(0, d.gameTime);
+    if (Number.isFinite(d.lastResetDay)) state.lastResetDay = Math.max(0, Math.floor(d.lastResetDay));
     return true;
   } catch (err) {
     console.warn('Load failed', err);
@@ -338,7 +346,7 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog('#bfeaff', 85, 240);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
-const cam = { yaw: 0, pitch: 0.45, dist: 8 };
+const cam = { yaw: 0, pitch: 0.45, dist: 8, targetDist: 8, eff: 8 };
 
 /* ---------------------------------------------------------
    MATERIAL / MESH HELPERS (low-poly, flat shaded)
@@ -406,7 +414,8 @@ function resolveCollisions(p) {
 /* ---------------------------------------------------------
    LIGHTING & SKY
    --------------------------------------------------------- */
-scene.add(new THREE.HemisphereLight('#dff6ff', '#6aa84f', 1.15));
+const hemiLight = new THREE.HemisphereLight('#dff6ff', '#6aa84f', 1.15);
+scene.add(hemiLight);
 
 const sun = new THREE.DirectionalLight('#fff3d6', 1.8);
 sun.castShadow = true;
@@ -433,6 +442,7 @@ function buildSky() {
     colors.push(c.r, c.g, c.b);
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  skyGeo = geo;
   scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
     vertexColors: true, side: THREE.BackSide, fog: false,
   })));
@@ -528,7 +538,7 @@ function buildPlaza() {
     const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
     const x = Math.cos(a) * 12.5, z = Math.sin(a) * 12.5;
     addMesh(new THREE.CylinderGeometry(0.08, 0.1, 2.6, 6), '#3d3550', scene, x, 1.3, z);
-    addMesh(new THREE.SphereGeometry(0.28, 10, 8), '#fff2b0', scene, x, 2.8, z);
+    addMesh(new THREE.SphereGeometry(0.28, 10, 8), '#fff2b0', scene, x, 2.8, z).material = lampMat;
     addCircleObs(x, z, 0.25);
   }
 }
@@ -559,8 +569,8 @@ function buildShop({ x, z, side, wall, roof, signBg, label }) {
   addBox(7, 3.2, 5, wall, g, 0, 1.6, 0);                     // body
   addBox(7.8, 0.5, 5.8, roof, g, 0, 3.45, 0);                // roof
   addBox(0.1, 2, 1.2, '#6b4423', g, side * 3.52, 1.0, 0);    // door (faces the plaza)
-  addBox(0.1, 0.9, 1.0, '#b8ecff', g, side * 3.52, 1.5, -1.6); // windows
-  addBox(0.1, 0.9, 1.0, '#b8ecff', g, side * 3.52, 1.5, 1.6);
+  addBox(0.1, 0.9, 1.0, '#b8ecff', g, side * 3.52, 1.5, -1.6).material = windowMat; // windows
+  addBox(0.1, 0.9, 1.0, '#b8ecff', g, side * 3.52, 1.5, 1.6).material = windowMat;
 
   const sign = new THREE.Mesh(
     new THREE.PlaneGeometry(3.4, 1.0),
@@ -954,28 +964,51 @@ const endJoy = e => { if (e.pointerId === joy.id) resetJoystick(); };
 dom.joy.addEventListener('pointerup', endJoy);
 dom.joy.addEventListener('pointercancel', endJoy);
 
-// Camera rotation by dragging on the 3D view (mouse or touch)
-let dragId = null, lastX = 0, lastY = 0;
+// Camera rotation by dragging, pinch-to-zoom with two fingers, wheel zoom
+const activePointers = new Map();
+let rotating = null, pinch = null;
 dom.canvas.addEventListener('pointerdown', e => {
-  if (dragId !== null) return;
-  dragId = e.pointerId;
-  lastX = e.clientX; lastY = e.clientY;
+  if (editing) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   dom.canvas.setPointerCapture(e.pointerId);
+  if (activePointers.size === 2) {
+    const [a, b] = [...activePointers.values()];
+    pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom0: cam.targetDist };
+    rotating = null;
+  } else if (activePointers.size === 1) {
+    rotating = { id: e.pointerId };
+  }
 });
 dom.canvas.addEventListener('pointermove', e => {
-  if (e.pointerId !== dragId) return;
-  const dx = e.clientX - lastX, dy = e.clientY - lastY;
-  lastX = e.clientX; lastY = e.clientY;
-  cam.yaw -= dx * 0.006;
-  cam.pitch = clamp(cam.pitch - dy * 0.004, 0.1, 1.3);
+  const p = activePointers.get(e.pointerId);
+  if (!p) return;
+  const prevX = p.x, prevY = p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (pinch && activePointers.size === 2) {
+    const [a, b] = [...activePointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    cam.targetDist = clamp(pinch.zoom0 * pinch.d0 / d, CAM_MIN, CAM_MAX);
+    return;
+  }
+  if (rotating && rotating.id === e.pointerId) {
+    cam.yaw -= (p.x - prevX) * 0.006;
+    cam.pitch = clamp(cam.pitch - (p.y - prevY) * 0.004, 0.1, 1.3);
+  }
 });
-const endDrag = e => { if (e.pointerId === dragId) dragId = null; };
-dom.canvas.addEventListener('pointerup', endDrag);
-dom.canvas.addEventListener('pointercancel', endDrag);
+const endPointer = e => {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) pinch = null;
+  if (activePointers.size === 1) {
+    const [id] = activePointers.keys();
+    rotating = { id };
+  } else if (activePointers.size === 0) {
+    rotating = null;
+  }
+};
+dom.canvas.addEventListener('pointerup', endPointer);
+dom.canvas.addEventListener('pointercancel', endPointer);
 dom.canvas.addEventListener('contextmenu', e => e.preventDefault());
-dom.canvas.addEventListener('wheel', e => {
-  cam.dist = clamp(cam.dist + e.deltaY * 0.01, 4, 14);
-}, { passive: true });
+dom.canvas.addEventListener('wheel', e => zoomBy(e.deltaY * 0.01), { passive: true });
 
 addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -1207,13 +1240,15 @@ const RARITY_ORDER = ['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY'];
 const RARITY_COLOR = { COMMON: '#8e9aaf', UNCOMMON: '#3ccf5e', RARE: '#3aa8ff', EPIC: '#b05cff', LEGENDARY: '#ffb300' };
 
 const npcUI = { filter: 'ALL', buyQty: {}, sellQty: {} };
-let txLock = false;
 
-// Stops a double click from running the same transaction twice
-function withTx(fn) {
-  if (txLock) return;
-  txLock = true;
-  try { fn(); } finally { txLock = false; }
+// Stops double clicks from running the same transaction twice: a repeat click
+// on the same button within 500 ms is ignored. Different buttons are not affected.
+const lastTxByButton = {};
+function withTx(id, fn) {
+  const now = Date.now();
+  if (now - (lastTxByButton[id] || 0) < 500) return;
+  lastTxByButton[id] = now;
+  fn();
 }
 
 function plural(name, n) {
@@ -1401,9 +1436,9 @@ document.getElementById('npc-overlay').addEventListener('click', e => {
     npcUI.sellQty[key] = Math.max(0, (npcUI.sellQty[key] || 0) - 1);
     renderNpcPanel();
   } else if (act === 'sell-selected') {
-    withTx(sellSelected);
+    withTx('sell-selected', sellSelected);
   } else if (act === 'sell-all') {
-    withTx(sellAll);
+    withTx('sell-all', sellAll);
   } else if (act === 'filter') {
     npcUI.filter = key;
     renderNpcPanel();
@@ -1414,9 +1449,350 @@ document.getElementById('npc-overlay').addEventListener('click', e => {
     npcUI.buyQty[key] = Math.max(1, (npcUI.buyQty[key] || 1) - 1);
     renderNpcPanel();
   } else if (act === 'buy') {
-    withTx(() => buySeeds(key, npcUI.buyQty[key] || 1));
+    withTx('buy:' + key, () => buySeeds(key, npcUI.buyQty[key] || 1));
   }
 });
+
+/* ---------------------------------------------------------
+   DAY & NIGHT CYCLE · sun, moon, stars, sky colours, lamps
+   One in-game day = DAY_LENGTH seconds (20 minutes).
+   Phase 0 = sunrise (6:00). A new day starts at dawn, and that
+   is when the coins reset to 100.
+   --------------------------------------------------------- */
+const DAY_LENGTH = 1200;
+const DAY_KEYS_RAW = [
+  { p: 0.00, top: '#9fd8ff', bot: '#ffd2a0', sun: '#ffc27a', sunI: 1.0,  hemi: 0.9,  fog: '#ffd9b0' }, // dawn, golden morning
+  { p: 0.10, top: '#8fd0ff', bot: '#c9ecff', sun: '#fff0c4', sunI: 1.5,  hemi: 1.1,  fog: '#bfeaff' }, // morning, light blue
+  { p: 0.25, top: '#3f9cff', bot: '#d6f5ff', sun: '#fff6e0', sunI: 1.9,  hemi: 1.2,  fog: '#bfeaff' }, // noon, bright
+  { p: 0.40, top: '#5aa8ff', bot: '#e8f7ff', sun: '#ffeccc', sunI: 1.7,  hemi: 1.15, fog: '#cfeeff' }, // afternoon
+  { p: 0.50, top: '#6a7fd6', bot: '#ff9e7a', sun: '#ffa060', sunI: 1.1,  hemi: 0.85, fog: '#ffb08a' }, // sunset
+  { p: 0.58, top: '#34407a', bot: '#ff7fa8', sun: '#ff8a80', sunI: 0.4,  hemi: 0.5,  fog: '#8a6ab0' }, // pink dusk
+  { p: 0.68, top: '#101a3d', bot: '#253a6e', sun: '#9fb4ff', sunI: 0.15, hemi: 0.35, fog: '#1f2c5a' }, // night
+  { p: 0.90, top: '#0b1230', bot: '#1b2a55', sun: '#9fb4ff', sunI: 0.12, hemi: 0.3,  fog: '#18244d' }, // late night
+  { p: 1.00, top: '#9fd8ff', bot: '#ffd2a0', sun: '#ffc27a', sunI: 1.0,  hemi: 0.9,  fog: '#ffd9b0' }, // back to dawn
+];
+const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+const rgbHex = c => '#' + c.map(v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0')).join('');
+const lerpArr = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const DAY_KEYS = DAY_KEYS_RAW.map(k => ({
+  ...k, top: hexRGB(k.top), bot: hexRGB(k.bot), sun: hexRGB(k.sun), fog: hexRGB(k.fog),
+}));
+
+function dayKeyAt(p) {
+  let i = 0;
+  while (i < DAY_KEYS.length - 2 && DAY_KEYS[i + 1].p <= p) i++;
+  const a = DAY_KEYS[i], b = DAY_KEYS[i + 1];
+  const t = clamp((p - a.p) / (b.p - a.p), 0, 1);
+  const s = t * t * (3 - 2 * t); // smooth transition between keyframes
+  return {
+    top: lerpArr(a.top, b.top, s),
+    bot: lerpArr(a.bot, b.bot, s),
+    sun: lerpArr(a.sun, b.sun, s),
+    fog: lerpArr(a.fog, b.fog, s),
+    sunI: a.sunI + (b.sunI - a.sunI) * s,
+    hemi: a.hemi + (b.hemi - a.hemi) * s,
+  };
+}
+
+function periodName(p) {
+  return p < 0.2 ? 'Morning' : p < 0.45 ? 'Afternoon' : p < 0.6 ? 'Evening' : 'Night';
+}
+const PERIOD_ICON = { Morning: '🌅', Afternoon: '☀️', Evening: '🌇', Night: '🌙' };
+
+// Lamps and shop windows share these materials, so one change lights them all
+const lampMat = new THREE.MeshStandardMaterial({ color: '#fff2b0', emissive: '#ffd36b', emissiveIntensity: 0 });
+const windowMat = new THREE.MeshStandardMaterial({ color: '#b8ecff', emissive: '#ffb347', emissiveIntensity: 0 });
+
+let sunMesh = null, moonMesh = null, sunMat = null, moonMat = null, starsMat = null, skyGeo = null;
+const clockText = $('clock-text');
+let chirpTimer = 3;
+
+function buildCelestial() {
+  sunMat = new THREE.MeshBasicMaterial({ color: '#fff3c4', fog: false });
+  sunMesh = new THREE.Mesh(new THREE.SphereGeometry(9, 20, 14), sunMat);
+  moonMat = new THREE.MeshBasicMaterial({ color: '#e6edff', fog: false });
+  moonMesh = new THREE.Mesh(new THREE.SphereGeometry(6, 18, 12), moonMat);
+  scene.add(sunMesh, moonMesh);
+
+  // Stars use Math.random so the seeded world layout does not change
+  const N = 340;
+  const pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const x = Math.random() - 0.5, y = 0.12 + Math.random() * 0.88, z = Math.random() - 0.5;
+    const l = Math.hypot(x, y, z) || 1;
+    pos.set([x / l * 280, y / l * 280, z / l * 280], i * 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  starsMat = new THREE.PointsMaterial({
+    color: '#ffffff', size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false,
+  });
+  scene.add(new THREE.Points(geo, starsMat));
+}
+
+function updateDayNight(dt) {
+  state.gameTime += dt;
+
+  // New morning: coins reset to the starting amount
+  const day = Math.floor(state.gameTime / DAY_LENGTH);
+  if (day > state.lastResetDay) {
+    state.lastResetDay = day;
+    state.coins = START_COINS;
+    notify('🌅 A new morning! Your coins were reset to 🪙100.', 'info');
+    save();
+    refreshUI();
+  }
+
+  const p = (state.gameTime % DAY_LENGTH) / DAY_LENGTH;
+  const th = p * Math.PI * 2;
+  let sx = Math.cos(th), sy = Math.sin(th), sz = 0.35;
+  const sl = Math.hypot(sx, sy, sz);
+  sx /= sl; sy /= sl; sz /= sl;
+
+  const d = dayKeyAt(p);
+  const lampAmt = clamp((1.0 - d.sunI) / 0.7, 0, 1); // 0 in daylight, 1 at night
+
+  // Sun light and ambient light
+  sun.color.set(rgbHex(d.sun));
+  sun.intensity = d.sunI;
+  sun.position.set(player.x + sx * 80, Math.max(sy * 80, 6), player.z + sz * 80);
+  sun.target.position.set(player.x, 0, player.z);
+  sun.target.updateMatrixWorld();
+  hemiLight.intensity = d.hemi;
+  scene.fog.color.set(rgbHex(d.fog));
+
+  // Sky gradient
+  if (skyGeo) {
+    const pos = skyGeo.attributes.position, col = skyGeo.attributes.color;
+    for (let i = 0; i < pos.count; i++) {
+      const t = clamp(pos.getY(i) / 300, 0, 1), f = Math.pow(t, 0.6);
+      col.setXYZ(i,
+        d.bot[0] + (d.top[0] - d.bot[0]) * f,
+        d.bot[1] + (d.top[1] - d.bot[1]) * f,
+        d.bot[2] + (d.top[2] - d.bot[2]) * f);
+    }
+    col.needsUpdate = true;
+  }
+
+  // Sun and moon orbit the player
+  sunMat.color.set(rgbHex(d.sun));
+  sunMesh.position.set(player.x + sx * 200, sy * 200, player.z + sz * 200);
+  moonMesh.position.set(player.x - sx * 200, -sy * 200, player.z - sz * 200);
+  sunMesh.visible = sy > -0.12;
+  moonMesh.visible = sy < 0.12;
+
+  // Night lighting
+  lampMat.emissiveIntensity = lampAmt * 1.6;
+  windowMat.emissiveIntensity = lampAmt * 1.1;
+  starsMat.opacity = clamp((0.6 - d.sunI) / 0.35, 0, 1);
+
+  // Clock label (6:00 is sunrise)
+  const hour = (6 + p * 24) % 24;
+  const hh = Math.floor(hour), mm = Math.floor((hour - hh) * 60);
+  const per = periodName(p);
+  clockText.textContent = `${PERIOD_ICON[per]} ${per} · Day ${day + 1} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+
+  // Optional night ambience: quiet crickets
+  if (lampAmt > 0.5 && audioReady() && !modalMode) {
+    chirpTimer -= dt;
+    if (chirpTimer <= 0) {
+      const t0 = audio.ctx.currentTime;
+      tone(3100 + rnd() * 400, t0, 0.07, 'sine', 0.03, audio.sfxBus);
+      tone(3500 + rnd() * 400, t0 + 0.12, 0.07, 'sine', 0.03, audio.sfxBus);
+      chirpTimer = 2.5 + rnd() * 4;
+    }
+  }
+}
+
+// Normalises a crop model so its height equals targetH at scale 1
+function normalizeCrop(group, targetH) {
+  const box = new THREE.Box3().setFromObject(group);
+  const h = box.max.y - box.min.y;
+  group.userData.unit = h > 0.0001 ? targetH / h : targetH;
+}
+
+/* ---------------------------------------------------------
+   CAMERA ZOOM & COLLISION
+   --------------------------------------------------------- */
+const CAM_MIN = 3, CAM_MAX = 16;
+function zoomBy(delta) {
+  cam.targetDist = clamp(cam.targetDist + delta, CAM_MIN, CAM_MAX);
+}
+function bindZoomButton(id, delta) {
+  const btn = $(id);
+  let timer = null;
+  const stop = () => { clearInterval(timer); timer = null; };
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    zoomBy(delta);
+    stop();
+    timer = setInterval(() => zoomBy(delta), 120);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, stop));
+}
+bindZoomButton('zoom-in', -1.2);
+bindZoomButton('zoom-out', 1.2);
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.code === 'Equal' || e.code === 'NumpadAdd') zoomBy(-1);
+  if (e.code === 'Minus' || e.code === 'NumpadSubtract') zoomBy(1);
+});
+
+function insideAnyObstacle(x, z, m) {
+  for (const o of obstacles) {
+    if (o.r !== undefined) {
+      if (Math.hypot(x - o.x, z - o.z) < o.r + m) return true;
+    } else if (x > o.minX - m && x < o.maxX + m && z > o.minZ - m && z < o.maxZ + m) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Largest safe camera distance along the view direction, so the camera
+// never passes through buildings, fences, trees, rocks or the ground
+function cameraLimit(tx, ty, tz, ux, uy, uz, maxD) {
+  for (let d = 1.0; d <= maxD; d += 0.25) {
+    const x = tx + ux * d, y = ty + uy * d, z = tz + uz * d;
+    if (y < 0.3 || insideAnyObstacle(x, z, 0.35)) return Math.max(1.2, d - 0.5);
+  }
+  return maxD;
+}
+
+/* ---------------------------------------------------------
+   BUTTON LAYOUT · customise every HUD button (position & size)
+   Saved per device in localStorage.
+   --------------------------------------------------------- */
+const LAYOUT_KEY = 'garden3d_layout_v1';
+const EDITABLE = {
+  'stats-panel': 'Stats', 'btn-inventory': 'Inventory', 'btn-shop': 'Shop', 'btn-sound': 'Sound',
+  'btn-settings': 'Settings', 'zoom-wrap': 'Zoom buttons', 'hotbar-wrap': 'Seed bar',
+  'interact-btn': 'Use button', 'jump-btn': 'Jump button', 'joystick': 'Joystick',
+};
+let layout = {};
+try { layout = JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {}; } catch (err) { layout = {}; }
+function saveLayout() {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (err) { /* storage unavailable */ }
+}
+function layoutOf(id) { return layout[id] || { x: 0, y: 0, s: 1 }; }
+function applyLayout(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const L = layoutOf(id);
+  el.style.translate = `${L.x}px ${L.y}px`;
+  el.style.scale = String(L.s);
+}
+function applyAllLayout() { Object.keys(EDITABLE).forEach(applyLayout); }
+
+let editing = false, editSel = null, dragInfo = null;
+const editBar = $('edit-bar'), editName = $('edit-name'), editSize = $('edit-size');
+
+function markEditable() {
+  Object.keys(EDITABLE).forEach(id => document.getElementById(id)?.classList.add('editable'));
+}
+function clearEditable() {
+  Object.keys(EDITABLE).forEach(id => document.getElementById(id)?.classList.remove('editable', 'selected'));
+}
+function selectEditable(id) {
+  editSel = id;
+  Object.keys(EDITABLE).forEach(k => document.getElementById(k)?.classList.toggle('selected', k === id));
+  editName.textContent = EDITABLE[id];
+  editSize.value = String(Math.round(layoutOf(id).s * 100));
+  editSize.disabled = false;
+}
+function openSettings() {
+  if (modalMode) return;
+  modalMode = 'settings';
+  document.getElementById('settings-overlay').classList.remove('hidden');
+}
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.add('hidden');
+  if (modalMode === 'settings') modalMode = null;
+}
+function startEdit() {
+  if (modalMode && modalMode !== 'settings') return;
+  closeSettings();
+  editing = true;
+  modalMode = 'layout';
+  document.body.classList.add('editing');
+  markEditable();
+  editSel = null;
+  editName.textContent = 'Tap a button to select it';
+  editSize.value = '100';
+  editSize.disabled = true;
+  editBar.classList.remove('hidden');
+}
+function endEdit() {
+  editing = false;
+  dragInfo = null;
+  editSel = null;
+  if (modalMode === 'layout') modalMode = null;
+  document.body.classList.remove('editing');
+  clearEditable();
+  editBar.classList.add('hidden');
+}
+
+// While customising, HUD buttons only move or select; they do not trigger their actions
+const inEditBar = e => !!(e.target.closest && e.target.closest('#edit-bar'));
+document.addEventListener('pointerdown', e => {
+  if (!editing || inEditBar(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = e.target.closest ? e.target.closest('.editable') : null;
+  if (!el) return;
+  selectEditable(el.id);
+  const L = layoutOf(el.id);
+  dragInfo = { id: el.id, pid: e.pointerId, x0: e.clientX, y0: e.clientY, bx: L.x, by: L.y };
+}, true);
+document.addEventListener('pointermove', e => {
+  if (!dragInfo || e.pointerId !== dragInfo.pid) return;
+  const L = layoutOf(dragInfo.id);
+  layout[dragInfo.id] = {
+    x: dragInfo.bx + (e.clientX - dragInfo.x0),
+    y: dragInfo.by + (e.clientY - dragInfo.y0),
+    s: L.s,
+  };
+  applyLayout(dragInfo.id);
+}, true);
+const endLayoutDrag = e => {
+  if (dragInfo && e.pointerId === dragInfo.pid) { dragInfo = null; saveLayout(); }
+};
+document.addEventListener('pointerup', endLayoutDrag, true);
+document.addEventListener('pointercancel', endLayoutDrag, true);
+document.addEventListener('click', e => {
+  if (editing && !inEditBar(e)) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
+editSize.addEventListener('input', () => {
+  if (!editSel) return;
+  const L = layoutOf(editSel);
+  layout[editSel] = { x: L.x, y: L.y, s: Number(editSize.value) / 100 };
+  applyLayout(editSel);
+  saveLayout();
+});
+$('edit-reset-one').addEventListener('click', () => {
+  if (!editSel) return;
+  delete layout[editSel];
+  applyLayout(editSel);
+  saveLayout();
+  selectEditable(editSel);
+});
+$('edit-done').addEventListener('click', () => {
+  endEdit();
+  notify('Button layout saved ✔', 'success');
+});
+
+$('btn-settings').addEventListener('pointerdown', e => { e.preventDefault(); openSettings(); });
+$('settings-close').addEventListener('click', closeModal);
+$('settings-overlay').addEventListener('click', e => { if (e.target.id === 'settings-overlay') closeModal(); });
+$('btn-customize').addEventListener('click', startEdit);
+$('btn-reset-layout').addEventListener('click', () => {
+  layout = {};
+  saveLayout();
+  applyAllLayout();
+  notify('Button layout reset to default.', 'info');
+});
+
 
 let lastPrompt = '';
 function updatePrompt() {
@@ -1457,9 +1833,11 @@ function openModal(mode) {
   renderModal();
 }
 function closeModal() {
+  if (modalMode === 'layout') { endEdit(); return; }
   modalMode = null;
   dom.modal.classList.add('hidden');
   document.getElementById('npc-overlay').classList.add('hidden');
+  document.getElementById('settings-overlay').classList.add('hidden');
 }
 
 function shopHTML() {
@@ -1567,9 +1945,10 @@ function updatePlotVisual(view, data, now, t) {
     if (view.cropObj) view.group.remove(view.cropObj);
     view.cropObj = null;
     if (data.crop) {
-      view.cropObj = stage === 0 ? sproutProto.clone() : cropProto[data.crop].clone();
+      const proto = stage === 0 ? sproutProto : cropProto[data.crop];
+      view.cropObj = proto.clone();
       view.cropObj.position.y = 0.3;
-      view.cropObj.scale.setScalar(stage === 1 ? 0.5 : 1);
+      view.cropObj.scale.setScalar(proto.userData.unit * (stage === 1 ? 0.5 : 1));
       view.group.add(view.cropObj);
     }
     // Growth sound when the same crop moves to its next stage
@@ -1663,22 +2042,19 @@ function updatePlayer(dt) {
   avatar.root.rotation.y = player.facing;
 }
 
-function updateCamera() {
+function updateCamera(dt) {
+  cam.dist += (cam.targetDist - cam.dist) * (1 - Math.exp(-dt * 8));
   const tx = player.x, ty = player.y + 1.6, tz = player.z;
   const cp = Math.cos(cam.pitch);
-  camera.position.set(
-    tx + Math.sin(cam.yaw) * cp * cam.dist,
-    ty + Math.sin(cam.pitch) * cam.dist,
-    tz + Math.cos(cam.yaw) * cp * cam.dist
-  );
+  const ux = Math.sin(cam.yaw) * cp, uy = Math.sin(cam.pitch), uz = Math.cos(cam.yaw) * cp;
+  const limit = cameraLimit(tx, ty, tz, ux, uy, uz, cam.dist);
+  const goal = Math.min(cam.dist, limit);
+  // Pull in quickly when a wall is hit, ease back out slowly
+  cam.eff += (goal - cam.eff) * (1 - Math.exp(-dt * (goal < cam.eff ? 20 : 6)));
+  camera.position.set(tx + ux * cam.eff, ty + uy * cam.eff, tz + uz * cam.eff);
   camera.lookAt(tx, ty, tz);
 }
 
-function updateSun() {
-  sun.position.set(player.x + 25, 55, player.z + 18);
-  sun.target.position.set(player.x, 0, player.z);
-  sun.target.updateMatrixWorld();
-}
 
 /* ---------------------------------------------------------
    INIT
@@ -1686,6 +2062,7 @@ function updateSun() {
 load();
 buildHotbar();
 buildSky();
+buildCelestial();
 buildGround();
 buildPlaza();
 buildShop({ x: SHOP.x, z: SHOP.z, side: -1, wall: '#ffe6a8', roof: '#ff5a7a', signBg: '#2fbf5a', label: 'SEED SHOP' });
@@ -1696,9 +2073,13 @@ buildClouds();
 avatar = buildAvatar();
 sproutProto = buildSprout();
 for (const k of ALL_CROP_KEYS) cropProto[k] = buildCrop(k);
+for (const k of ALL_CROP_KEYS) normalizeCrop(cropProto[k], MATURE_H);
+normalizeCrop(sproutProto, 0.6);
 buildNpcs();
 buildTargets();
 updateHUD();
+applyAllLayout();
+updateDayNight(0);
 
 addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -1722,8 +2103,8 @@ function frame() {
   elapsed += dt;
 
   updatePlayer(dt);
-  updateCamera();
-  updateSun();
+  updateCamera(dt);
+  updateDayNight(dt);
   const now = Date.now();
   plotViews.forEach((v, i) => updatePlotVisual(v, state.plots[i], now, elapsed));
   updateClouds(dt);
