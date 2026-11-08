@@ -22,17 +22,19 @@
 
     <!-- Top HUD -->
     <header id="hud-top">
-      <div class="panel stats">
+      <div id="stats-panel" class="panel stats">
         <div class="stat coins"><span>🪙</span><span id="coins">100</span></div>
         <div class="stat level">
           <span>Level <b id="level">1</b></span>
         </div>
+        <div class="stat clock"><span id="clock-text">🌅 Morning · Day 1</span></div>
         <div class="xp-bar"><div id="xp-fill"></div></div>
       </div>
       <div class="top-buttons">
         <button id="btn-inventory" class="pill-btn">🎒 Inventory</button>
         <button id="btn-shop" class="pill-btn accent">🛒 Shop</button>
         <button id="btn-sound" class="pill-btn" aria-label="Sound on or off">🔊</button>
+        <button id="btn-settings" class="pill-btn" aria-label="Settings">⚙️</button>
       </div>
     </header>
 
@@ -56,6 +58,11 @@
       WASD move · Space jump · Drag to rotate · Scroll zoom · E interact · 1–4 pick seeds
     </div>
 
+    <div id="zoom-wrap" class="zoom-wrap">
+      <button id="zoom-in" class="zoom-btn" aria-label="Zoom in">+</button>
+      <button id="zoom-out" class="zoom-btn" aria-label="Zoom out">−</button>
+    </div>
+
     <div id="toasts"></div>
 
     <!-- Modal (shop / sell / inventory) -->
@@ -73,6 +80,30 @@
   <!-- NPC shop dialogues (Abdul & Nguyet) -->
   <div id="npc-overlay" class="modal hidden">
     <div id="npc-card" class="npc-card"></div>
+  </div>
+
+  <!-- Settings panel -->
+  <div id="settings-overlay" class="modal hidden">
+    <div class="modal-card settings-card">
+      <div class="modal-head">
+        <h2>⚙️ Settings</h2>
+        <button id="settings-close" aria-label="Close">✕</button>
+      </div>
+      <h3>Buttons</h3>
+      <button id="btn-customize" class="big-btn">🎨 Customize buttons</button>
+      <button id="btn-reset-layout" class="big-btn alt">↺ Reset button layout</button>
+      <p class="hint">In customize mode, drag any button to move it, tap it to select it, then use the size slider. Press Done when you finish.</p>
+    </div>
+  </div>
+
+  <!-- Customize-mode bar -->
+  <div id="edit-bar" class="panel edit-bar hidden">
+    <div class="edit-row"><b id="edit-name">Tap a button to select it</b></div>
+    <input id="edit-size" type="range" min="60" max="160" value="100" aria-label="Button size" />
+    <div class="edit-row">
+      <button id="edit-reset-one" class="edit-btn">Reset</button>
+      <button id="edit-done" class="edit-btn done">✔ Done</button>
+    </div>
   </div>
 
   <script type="module" src="main.js"></script>
