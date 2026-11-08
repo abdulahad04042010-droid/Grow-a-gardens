@@ -567,3 +567,68 @@ button { font-family: inherit; cursor: pointer; border: none; }
   .pill-btn { padding: 8px 11px; font-size: 13px; }
   .modal-head h2 { font-size: 20px; }
 }
+
+
+/* ---------- Clock, zoom buttons, settings & customize mode ---------- */
+.clock { font-size: 13px !important; margin-bottom: 2px; }
+.zoom-wrap {
+  position: absolute;
+  right: 14px;
+  top: 42%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+}
+.zoom-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: bold;
+  box-shadow: 0 4px 0 #cdbfe6;
+}
+.zoom-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #cdbfe6; }
+.big-btn {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: #3ccf5e;
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 16px;
+  box-shadow: 0 5px 0 #1d8a37;
+}
+.big-btn.alt { background: #ffb347; box-shadow: 0 5px 0 #d9822b; }
+.settings-card { max-width: 420px; }
+.hint { font-size: 13px; color: #6b5b95; }
+.editing .editable {
+  outline: 2px dashed #ffb347;
+  outline-offset: 4px;
+  border-radius: 14px;
+  cursor: move;
+}
+.editing .editable.selected { outline: 3px solid #3ccf5e; }
+.edit-bar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 84px;
+  width: min(92%, 380px);
+  padding: 10px 14px;
+  z-index: 45;
+}
+.edit-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#edit-size { width: 100%; margin: 8px 0; }
+.edit-btn {
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  font-weight: bold;
+  box-shadow: 0 3px 0 #cdbfe6;
+}
+.edit-btn.done { background: #3ccf5e; color: #ffffff; box-shadow: 0 3px 0 #1d8a37; }
