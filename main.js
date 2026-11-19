@@ -471,8 +471,30 @@ function scatter(count, fn) {
   }
 }
 
+let grassMatCache = null;
+function grassMaterial() {
+  if (grassMatCache) return grassMatCache;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#5fd24f';
+  g.fillRect(0, 0, 128, 128);
+  const shades = ['#4cc843', '#6ee05a', '#3fb33a', '#7ae868', '#56c948'];
+  for (let i = 0; i < 1100; i++) {
+    g.fillStyle = shades[i % shades.length];
+    g.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 3 + Math.random() * 3);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(52, 52);
+  grassMatCache = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 });
+  return grassMatCache;
+}
+
 function buildGround() {
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), mat('#5fd24f'));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), grassMaterial());
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
@@ -894,36 +916,95 @@ const player = { x: 0, y: 0, z: 6, vy: 0, grounded: true, facing: 0, walk: 0 };
 function buildAvatar() {
   const root = new THREE.Group();
   scene.add(root);
-  const SHIRT = '#ff4f6d', PANTS = '#2f6bff', SKIN = '#ffd3a1', HAIR = '#5a3a1f', SHOE = '#2b2233';
+  // Colours taken from the reference character
+  const SKIN = '#f6d4b5', BLUSH = '#ff9aa2', MOUTH = '#b5435a', EYE = '#5fd67a', PUPIL = '#1d3d2a';
+  const HAIR = '#3aa35c', HAIR_DARK = '#2b7d46', BLONDE = '#f2c94c';
+  const RED = '#d9362b', RED_DARK = '#a8251e', CREAM = '#f7f3dc', MINT = '#cfeaa6';
+  const ORANGE = '#f2a33a', GREEN = '#6fb34a', GREEN_DARK = '#3f8a3a', LEAF = '#5fb84a';
+  const OVERALL = '#8b5a3c', SHORTS = '#7a4e32', CUFF = '#c9a27a', BOOT = '#8a5a2b', SOLE = '#6fb34a';
+  const SOCK = '#d9efb0', BASKET = '#d1a46a';
 
-  addBox(0.9, 0.9, 0.5, SHIRT, root, 0, 1.25, 0);     // torso
-  addBox(0.8, 0.8, 0.8, SKIN, root, 0, 2.2, 0);       // head
-  addBox(0.84, 0.22, 0.84, HAIR, root, 0, 2.6, 0);    // hair
-  addBox(0.14, 0.14, 0.05, '#222222', root, -0.18, 2.25, 0.41); // eyes
-  addBox(0.14, 0.14, 0.05, '#222222', root, 0.18, 2.25, 0.41);
-  addBox(0.3, 0.06, 0.05, '#b5435a', root, 0, 2.05, 0.41);      // smile
+  // Head and face
+  addBox(0.8, 0.8, 0.8, SKIN, root, 0, 2.2, 0);
+  addBox(0.14, 0.18, 0.05, EYE, root, -0.18, 2.2, 0.41);
+  addBox(0.14, 0.18, 0.05, EYE, root, 0.18, 2.2, 0.41);
+  addBox(0.06, 0.08, 0.03, PUPIL, root, -0.18, 2.2, 0.44);
+  addBox(0.06, 0.08, 0.03, PUPIL, root, 0.18, 2.2, 0.44);
+  addBox(0.12, 0.06, 0.03, BLUSH, root, -0.27, 2.08, 0.42);
+  addBox(0.12, 0.06, 0.03, BLUSH, root, 0.27, 2.08, 0.42);
+  addBox(0.18, 0.04, 0.03, MOUTH, root, 0, 2.02, 0.42);
+
+  // Green hair, bangs and side locks
+  addBox(0.86, 0.16, 0.86, HAIR, root, 0, 2.64, -0.02);
+  addBox(0.86, 0.6, 0.12, HAIR_DARK, root, 0, 2.15, -0.44);
+  addBox(0.12, 0.5, 0.7, HAIR, root, -0.44, 2.2, -0.05);
+  addBox(0.12, 0.5, 0.7, HAIR, root, 0.44, 2.2, -0.05);
+  addBox(0.86, 0.14, 0.1, HAIR, root, 0, 2.5, 0.4);
+
+  // Red bandana with knot tails
+  addBox(0.9, 0.14, 0.9, RED, root, 0, 2.42, 0);
+  addBox(0.12, 0.12, 0.3, RED_DARK, root, -0.44, 2.38, -0.42);
+  addBox(0.12, 0.12, 0.3, RED_DARK, root, 0.44, 2.38, -0.42);
+
+  // Hair clip with a red flower
+  addBox(0.14, 0.14, 0.06, RED, root, 0.32, 2.5, 0.42);
+
+  // Braid (yellow and green) down the back-right, tied with a red ribbon
+  const braid = [[0.34, 2.36, -0.32, BLONDE], [0.36, 2.12, -0.34, HAIR], [0.34, 1.88, -0.36, BLONDE], [0.32, 1.64, -0.38, HAIR]];
+  for (const [x, y, z, c] of braid) addBox(0.2, 0.26, 0.2, c, root, x, y, z);
+  addBox(0.3, 0.16, 0.08, RED, root, 0.36, 2.5, -0.42);
+
+  // Torso: cream collar, mint shirt, brown overalls, orange cardigan
+  addBox(0.52, 0.12, 0.1, CREAM, root, 0, 1.7, 0.3);
+  addBox(0.5, 0.6, 0.06, MINT, root, 0, 1.4, 0.28);
+  addBox(0.9, 0.6, 0.5, OVERALL, root, 0, 1.1, 0);
+  addBox(0.14, 0.55, 0.06, OVERALL, root, -0.24, 1.42, 0.27);
+  addBox(0.14, 0.55, 0.06, OVERALL, root, 0.24, 1.42, 0.27);
+  addBox(1.0, 0.22, 0.56, ORANGE, root, 0, 1.6, 0);
+  addBox(0.22, 0.9, 0.1, ORANGE, root, -0.36, 1.3, 0.3);
+  addBox(0.22, 0.9, 0.1, ORANGE, root, 0.36, 1.3, 0.3);
+  addBox(0.92, 0.9, 0.36, ORANGE, root, 0, 1.3, -0.1);
+  addBox(0.22, 0.22, 0.04, RED, root, -0.2, 1.1, 0.29);      // apple patch
+  addBox(0.08, 0.06, 0.05, LEAF, root, -0.2, 1.24, 0.3);     // apple leaf
+  addBox(0.07, 0.07, 0.05, RED_DARK, root, 0.2, 1.22, 0.3);  // buttons
+  addBox(0.07, 0.07, 0.05, RED_DARK, root, 0.2, 0.98, 0.3);
 
   const makeArm = x => {
     const pivot = new THREE.Group();
     pivot.position.set(x, 1.7, 0);
     root.add(pivot);
-    addBox(0.3, 0.85, 0.3, SHIRT, pivot, 0, -0.42, 0);
-    addBox(0.3, 0.2, 0.3, SKIN, pivot, 0, -0.9, 0);
+    addBox(0.34, 0.26, 0.34, ORANGE, pivot, 0, -0.12, 0);       // orange shoulder
+    addBox(0.3, 0.6, 0.3, GREEN, pivot, 0, -0.5, 0);            // green knit sleeve
+    addBox(0.34, 0.14, 0.34, GREEN_DARK, pivot, 0, -0.8, 0);    // cuff
+    addBox(0.26, 0.18, 0.26, SKIN, pivot, 0, -0.97, 0);         // hand
     return pivot;
   };
   const makeLeg = x => {
     const pivot = new THREE.Group();
     pivot.position.set(x, 0.8, 0);
     root.add(pivot);
-    addBox(0.38, 0.75, 0.4, PANTS, pivot, 0, -0.38, 0);
-    addBox(0.4, 0.13, 0.5, SHOE, pivot, 0, -0.735, 0.05);
+    addBox(0.42, 0.3, 0.44, SHORTS, pivot, 0, -0.15, 0);        // brown shorts
+    addBox(0.44, 0.08, 0.46, CUFF, pivot, 0, -0.31, 0);         // rolled cuff
+    addBox(0.34, 0.2, 0.36, SKIN, pivot, 0, -0.42, 0);          // leg
+    addBox(0.36, 0.14, 0.38, SOCK, pivot, 0, -0.6, 0);          // pale green sock
+    addBox(0.42, 0.18, 0.52, BOOT, pivot, 0, -0.72, 0.03);      // brown boot
+    addBox(0.44, 0.05, 0.54, SOLE, pivot, 0, -0.8, 0.03);       // green sole
+    addBox(0.16, 0.14, 0.04, RED, pivot, 0, -0.68, 0.29);       // red laces
     return pivot;
   };
 
+  const armL = makeArm(-0.62);
+  const armR = makeArm(0.62);
+  // Basket of apples carried in the right hand (swings with the arm)
+  addBox(0.44, 0.28, 0.44, BASKET, armR, 0.02, -1.14, 0.1);
+  addMesh(new THREE.SphereGeometry(0.1, 8, 6), RED, armR, -0.08, -0.98, 0.1);
+  addMesh(new THREE.SphereGeometry(0.1, 8, 6), '#e0432e', armR, 0.1, -0.96, 0.14);
+  addBox(0.08, 0.06, 0.05, LEAF, armR, 0.0, -0.84, 0.1);
+
   return {
     root,
-    armL: makeArm(-0.62),
-    armR: makeArm(0.62),
+    armL,
+    armR,
     legL: makeLeg(-0.23),
     legR: makeLeg(0.23),
   };
