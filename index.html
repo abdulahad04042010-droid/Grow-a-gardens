@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Sunny Meadow Farm · 3D Garden World</title>
   <link rel="stylesheet" href="style.css" />
@@ -55,7 +55,7 @@
     </div>
 
     <div id="controls-hint" class="panel small">
-      WASD move · Space jump · Drag to rotate · Scroll zoom · E interact · 1–4 pick seeds
+      WASD move · Space jump · Drag or Q/R to turn · Scroll zoom · E interact · 1–4 pick seeds
     </div>
 
     <div id="zoom-wrap" class="zoom-wrap">
@@ -89,6 +89,18 @@
         <h2>⚙️ Settings</h2>
         <button id="settings-close" aria-label="Close">✕</button>
       </div>
+      <h3>Controls</h3>
+      <div class="set-row"><span>Camera sensitivity</span><span id="sens-val">100%</span></div>
+      <input id="set-sens" type="range" min="40" max="200" value="100" aria-label="Camera sensitivity" />
+      <button id="set-invert" class="big-btn alt">Invert vertical camera: OFF</button>
+      <h3>Graphics</h3>
+      <div id="set-quality" class="seg">
+        <button data-q="auto">Auto</button>
+        <button data-q="low">Low</button>
+        <button data-q="medium">Medium</button>
+        <button data-q="high">High</button>
+      </div>
+      <p id="quality-note" class="hint"></p>
       <h3>Buttons</h3>
       <button id="btn-customize" class="big-btn">🎨 Customize buttons</button>
       <button id="btn-reset-layout" class="big-btn alt">↺ Reset button layout</button>
