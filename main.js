@@ -349,6 +349,59 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 const cam = { yaw: 0, pitch: 0.45, dist: 8, targetDist: 8, eff: 8 };
 
 /* ---------------------------------------------------------
+   CONTROL & GRAPHICS SETTINGS (saved per device)
+   --------------------------------------------------------- */
+const SETTINGS_KEY = 'garden3d_settings_v1';
+const IS_TOUCH = window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
+const settings = { sens: 1, invertY: false, quality: 'auto' };
+try {
+  const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+  if (Number.isFinite(s.sens)) settings.sens = clamp(s.sens, 0.4, 2);
+  if (typeof s.invertY === 'boolean') settings.invertY = s.invertY;
+  if (['auto', 'low', 'medium', 'high'].includes(s.quality)) settings.quality = s.quality;
+} catch (err) { /* ignore bad saved settings */ }
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (err) { /* storage unavailable */ }
+}
+
+// Mouse/finger drag: moving up tilts the view up (camera drops), like most PC games.
+// Invert flips the vertical direction. Sensitivity scales both axes.
+function rotateCamera(dx, dy) {
+  cam.yaw -= dx * 0.006 * settings.sens;
+  const dir = settings.invertY ? -1 : 1;
+  cam.pitch = clamp(cam.pitch + dir * dy * 0.004 * settings.sens, 0.05, 1.35);
+}
+
+const QUALITY = {
+  low: { dpr: 1, shadows: false, map: 1024 },
+  medium: { dpr: 1.5, shadows: true, map: 1024 },
+  high: { dpr: 2, shadows: true, map: 2048 },
+};
+function resolvedQuality() {
+  if (settings.quality !== 'auto') return settings.quality;
+  return IS_TOUCH ? 'medium' : 'high'; // phones default to a lighter setting for smoother play
+}
+function applyQuality() {
+  const q = QUALITY[resolvedQuality()];
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.dpr));
+  renderer.shadowMap.enabled = q.shadows;
+  if (sun.shadow.mapSize.x !== q.map) {
+    sun.shadow.mapSize.set(q.map, q.map);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+}
+
+// Keeps the view wide enough on tall phone screens; handles rotation too
+function fitCamera() {
+  const aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = aspect;
+  camera.fov = clamp(60 + Math.max(0, 0.9 - aspect) * 25, 60, 80);
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+}
+
+/* ---------------------------------------------------------
    MATERIAL / MESH HELPERS (low-poly, flat shaded)
    --------------------------------------------------------- */
 const matCache = new Map();
@@ -1072,8 +1125,7 @@ dom.canvas.addEventListener('pointermove', e => {
     return;
   }
   if (rotating && rotating.id === e.pointerId) {
-    cam.yaw -= (p.x - prevX) * 0.006;
-    cam.pitch = clamp(cam.pitch - (p.y - prevY) * 0.004, 0.1, 1.3);
+    rotateCamera(p.x - prevX, p.y - prevY);
   }
 });
 const endPointer = e => {
@@ -1089,7 +1141,10 @@ const endPointer = e => {
 dom.canvas.addEventListener('pointerup', endPointer);
 dom.canvas.addEventListener('pointercancel', endPointer);
 dom.canvas.addEventListener('contextmenu', e => e.preventDefault());
-dom.canvas.addEventListener('wheel', e => zoomBy(e.deltaY * 0.01), { passive: true });
+dom.canvas.addEventListener('wheel', e => {
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 300 : e.deltaY;
+  zoomBy(dy * 0.01);
+}, { passive: true });
 
 addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -1785,6 +1840,7 @@ function openSettings() {
   if (modalMode) return;
   modalMode = 'settings';
   document.getElementById('settings-overlay').classList.remove('hidden');
+  updateSettingsUI();
 }
 function closeSettings() {
   document.getElementById('settings-overlay').classList.add('hidden');
@@ -1864,6 +1920,33 @@ $('edit-done').addEventListener('click', () => {
 });
 
 $('btn-settings').addEventListener('pointerdown', e => { e.preventDefault(); openSettings(); });
+
+function updateSettingsUI() {
+  const pct = Math.round(settings.sens * 100);
+  document.getElementById('set-sens').value = String(pct);
+  document.getElementById('sens-val').textContent = `${pct}%`;
+  document.getElementById('set-invert').textContent = `Invert vertical camera: ${settings.invertY ? 'ON' : 'OFF'}`;
+  document.querySelectorAll('#set-quality button').forEach(b => b.classList.toggle('on', b.dataset.q === settings.quality));
+  const actual = resolvedQuality();
+  document.getElementById('quality-note').textContent =
+    settings.quality === 'auto' ? `Auto picks ${actual} for this device.` : `Using ${actual} quality.`;
+}
+document.getElementById('set-sens').addEventListener('input', e => {
+  settings.sens = Number(e.target.value) / 100;
+  saveSettings();
+  updateSettingsUI();
+});
+document.getElementById('set-invert').addEventListener('click', () => {
+  settings.invertY = !settings.invertY;
+  saveSettings();
+  updateSettingsUI();
+});
+document.querySelectorAll('#set-quality button').forEach(b => b.addEventListener('click', () => {
+  settings.quality = b.dataset.q;
+  saveSettings();
+  applyQuality();
+  updateSettingsUI();
+}));
 $('settings-close').addEventListener('click', closeModal);
 $('settings-overlay').addEventListener('click', e => { if (e.target.id === 'settings-overlay') closeModal(); });
 $('btn-customize').addEventListener('click', startEdit);
@@ -2124,6 +2207,10 @@ function updatePlayer(dt) {
 }
 
 function updateCamera(dt) {
+  if (!modalMode) {
+    const turn = (keys.has('KeyQ') ? 1 : 0) - (keys.has('KeyR') ? 1 : 0);
+    if (turn) cam.yaw += turn * dt * 1.8;
+  }
   cam.dist += (cam.targetDist - cam.dist) * (1 - Math.exp(-dt * 8));
   const tx = player.x, ty = player.y + 1.6, tz = player.z;
   const cp = Math.cos(cam.pitch);
@@ -2161,12 +2248,10 @@ buildTargets();
 updateHUD();
 applyAllLayout();
 updateDayNight(0);
+fitCamera();
+applyQuality();
 
-addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
-});
+addEventListener('resize', fitCamera);
 
 addEventListener('beforeunload', save);
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
