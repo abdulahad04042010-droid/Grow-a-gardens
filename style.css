@@ -632,3 +632,27 @@ button { font-family: inherit; cursor: pointer; border: none; }
   box-shadow: 0 3px 0 #cdbfe6;
 }
 .edit-btn.done { background: #3ccf5e; color: #ffffff; box-shadow: 0 3px 0 #1d8a37; }
+
+
+/* ---------- Settings controls, phone safe areas and small landscape screens ---------- */
+.set-row { display: flex; justify-content: space-between; font-weight: bold; margin-top: 12px; }
+#set-sens { width: 100%; margin: 6px 0 10px; }
+.seg { display: flex; gap: 6px; margin: 8px 0 4px; }
+.seg button {
+  flex: 1; padding: 10px 4px; border-radius: 12px; background: #ffffff;
+  color: var(--ink); font-weight: bold; box-shadow: 0 3px 0 #cdbfe6;
+}
+.seg button.on { background: #3ccf5e; color: #ffffff; box-shadow: 0 3px 0 #1d8a37; }
+#hud-top { top: calc(12px + env(safe-area-inset-top, 0px)); }
+body { -webkit-touch-callout: none; }
+@media (max-height: 500px) and (orientation: landscape) {
+  .stats { min-width: 130px; padding: 6px 10px; }
+  .stat { font-size: 15px; }
+  .pill-btn { padding: 6px 10px; font-size: 12px; }
+  .seed-slot { width: 56px; height: 58px; font-size: 10px; }
+  .slot-emoji { font-size: 20px; }
+  #hotbar-wrap { bottom: 8px; }
+  #interact-btn { width: 66px; height: 66px; font-size: 15px; }
+  .joystick { width: 108px; height: 108px; }
+  .zoom-wrap { top: 24%; bottom: auto; right: 12px; }
+}
